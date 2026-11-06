@@ -32,12 +32,16 @@ export const guests = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => members.id),
+    nickname: text("nickname"),
     payment: text("payment").notNull().default("unpaid"),
     provider: text("provider"),
     paymentRef: text("payment_ref"),
     checkedAt: text("checked_at"),
   },
-  (t) => [uniqueIndex("one_guest").on(t.meetupId, t.userId)],
+  (t) => [
+    uniqueIndex("one_guest").on(t.meetupId, t.userId),
+    uniqueIndex("one_room_nickname").on(t.meetupId, t.nickname),
+  ],
 );
 export const claims = sqliteTable(
   "claims",

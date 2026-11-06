@@ -1,8 +1,10 @@
 # 제시간에 — 서울에서, 우리 제시간에
 
-**2026-11-07 · v0.2.1 개발 스냅샷**
+**2026-11-07 · v0.3.0 개발 스냅샷**
 
 [기획 과정](docs/2026-11-07-planning-process.md) · [현재 버전 구성](docs/2026-11-07-version.md) · [구조와 설계 결정](docs/architecture.md) · [변경 기록](CHANGELOG.md)
+
+[실제 운영 전 남은 과정](docs/launch-checklist.md)
 
 ![남산타워와 한강 노을](public/images/seoul-sunset.webp)
 
@@ -11,7 +13,9 @@
 
 ## 지금 가능한 일
 
-- 약속 이름, 장소, 날짜·시간(KST), 예약금 없음(0원) 또는 1인 1,000원·3,000원으로 약속방 생성
+- 약속 생성·초대 참여 시 약속별 내 닉네임(1~20자) 직접 설정, 같은 약속 안에서 중복 방지
+- 약속 이름, 장소, 날짜·시간(KST), 1인 예약금 0~50,000원 원 단위 직접 설정
+- 없음·1,000원·3,000원 빠른 선택 아래 슬라이더와 숫자 입력 제공
 - 12자리 초대 코드로 최대 20명 참여
 - 카카오페이 또는 토스를 선택해 모의 예치 기록 저장
 - 2명 이상이면 예약금 없는 약속은 결제 없이 확정, 예약금이 있다면 전원 예치 후 확정
@@ -89,8 +93,9 @@ vote 요청은 D1의 atomic batch 안에서 다음 순서로 처리합니다.
 
 | action | 요청 | 권한·조건 |
 | --- | --- | --- |
-| create | title, location, startsAt, amount | 로그인, 미래 시간, 0/1,000/3,000원 |
-| join | code | 미확정·시작 전, 최대 20명 |
+| create | nickname, title, location, startsAt, amount | 로그인, 미래 시간, 정수 0~50,000원 |
+| join | code, nickname | 미확정·시작 전, 최대 20명, 약속 내 고유 닉네임 |
+| nickname | id, nickname | 본인의 약속별 닉네임만 변경 |
 | pay | id, provider: kakao/toss | 본인, 모의 예치 1회 |
 | lock | id | 모임장, 시작 전, 전원 예치·2명 이상 |
 | checkin | id | 본인, locked, 1회 |
@@ -112,12 +117,13 @@ npm run install:ci
 npm run build
 ```
 
-비어 있는 로컬 DB에 아래 두 마이그레이션을 순서대로 한 번만 적용합니다.
-기존 로컬 DB에 0000이 이미 적용되어 있다면 0001만 적용하세요.
+비어 있는 로컬 DB에는 아래 마이그레이션을 순서대로 한 번만 적용합니다.
+기존 로컬 DB에는 아직 적용하지 않은 파일만 적용하세요. 0002는 기존 참여자를 유지하며 닉네임 컬럼을 추가합니다.
 
 ```powershell
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_ambiguous_smiling_tiger.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_adorable_newton_destine.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_tough_vance_astro.sql
 npm run dev -- --port 5173
 ```
 

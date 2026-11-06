@@ -6,6 +6,8 @@ if (!["127.0.0.1", "localhost"].includes(new URL(base).hostname))
 const prefix = "meet_" + Date.now().toString(36),
   users = [0, 1, 2, 3, 4].map((i) => `${prefix}_${i}`);
 async function api(user, body, id = "") {
+  if (body && ["create", "join"].includes(body.action))
+    body = { nickname: `친구${users.indexOf(user)}`, ...body };
   const res = await fetch(base + "/api/meetups" + (id ? "?id=" + id : ""), {
     method: body ? "POST" : "GET",
     headers: {
@@ -60,7 +62,7 @@ assert.equal(
       title: "bad",
       location: "Seoul",
       startsAt: "2099-01-01",
-      amount: 2000,
+      amount: 50001,
     })
   ).status,
   400,
@@ -280,6 +282,101 @@ const invalidTime = await api(users[0], {
 assert.equal(invalidTime.status, 400);
 assert.match(invalidTime.body.fieldErrors.startsAt, /이미 지났어요/);
 assert.ok(invalidTime.body.serverNow);
+// Profile names never become meetup nicknames; explicit room-scoped names do.
+const noName = await api(users[0], {
+  action: "create",
+  title: "닉네임필수",
+  location: "한강",
+  startsAt: new Date(Date.now() + 3600000).toISOString(),
+  amount: 1000,
+  nickname: null,
+});
+assert.equal(noName.status, 400);
+assert.ok(noName.body.fieldErrors.nickname);
+const max = await ok(users[0], {
+  action: "create",
+  title: "직접 정한 금액",
+  location: "남산",
+  startsAt: new Date(Date.now() + 3600000).toISOString(),
+  amount: 50000,
+  nickname: "남산러버",
+});
+let md = await detail(max.id);
+assert.equal(md.room.amount, 50000);
+assert.equal(md.people[0].name, "남산러버");
+const blank = await api(users[1], {
+  action: "join",
+  code: md.room.code,
+  nickname: " ",
+});
+assert.equal(blank.status, 400);
+const duplicateName = await api(users[1], {
+  action: "join",
+  code: md.room.code,
+  nickname: "남산러버",
+});
+assert.equal(duplicateName.status, 409);
+const raceNames = await Promise.all(
+  [1, 2].map((i) =>
+    api(users[i], {
+      action: "join",
+      code: md.room.code,
+      nickname: "같은닉네임",
+    }),
+  ),
+);
+assert.equal(raceNames.filter((r) => r.status === 200).length, 1);
+assert.equal(raceNames.filter((r) => r.status === 409).length, 1);
+md = await detail(max.id);
+assert.equal(md.people.length, 2);
+await ok(users[0], {
+  action: "nickname",
+  id: max.id,
+  nickname: "새로운닉네임",
+});
+md = await detail(max.id);
+assert.equal(
+  md.people.find((p) => p.user_id === users[0]).name,
+  "새로운닉네임",
+);
+const other = await detail(id);
+assert.equal(other.people.find((p) => p.user_id === users[0]).name, "친구0");
+assert.equal(
+  (await api(users[4], { action: "nickname", id: max.id, nickname: "침입" }))
+    .status,
+  403,
+);
+assert.equal(JSON.stringify(md).includes("@sites.test"), false);
+const custom = await ok(users[0], {
+  action: "create",
+  title: "원단위 금액",
+  location: "한강",
+  startsAt: new Date(Date.now() + 3600000).toISOString(),
+  amount: 12345,
+  nickname: "다른모임닉",
+});
+assert.equal((await detail(custom.id)).room.amount, 12345);
+fixture(`UPDATE guests SET nickname=NULL WHERE meetup_id='${custom.id}';`);
+assert.equal((await detail(custom.id)).people[0].name, "닉네임 미설정");
+await ok(users[0], {
+  action: "nickname",
+  id: custom.id,
+  nickname: "기존약속닉",
+});
+assert.equal((await detail(custom.id)).people[0].name, "기존약속닉");
+for (const amount of [50001, -1, 1.5])
+  assert.equal(
+    (
+      await api(users[0], {
+        action: "create",
+        title: "한도검증",
+        location: "한강",
+        startsAt: new Date(Date.now() + 3600000).toISOString(),
+        amount,
+      })
+    ).status,
+    400,
+  );
 assert.equal((await api(null, { action: "create" })).status, 401);
 console.log(
   "PASS: field-specific time errors, deposit-free plan create/join/lock/checkin/settle, 1000/3000 mock payments, membership privacy, frozen roster, unanimous consent, rejection refunds, immutable votes, concurrent overspend protection, cancellation and auth.",

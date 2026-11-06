@@ -7,9 +7,9 @@ export async function session() {
   const db = env.DB;
   await db
     .prepare(
-      `INSERT INTO members(id,name,email,role) VALUES(?,?,?,CASE WHEN NOT EXISTS(SELECT 1 FROM members) THEN 'admin' ELSE 'member' END) ON CONFLICT(id) DO UPDATE SET name=excluded.name,email=excluded.email`,
+      `INSERT INTO members(id,name,email,role) VALUES(?,?,?,CASE WHEN NOT EXISTS(SELECT 1 FROM members) THEN 'admin' ELSE 'member' END) ON CONFLICT(id) DO NOTHING`,
     )
-    .bind(user.userId, user.displayName, user.email)
+    .bind(user.userId, "참여자", "")
     .run();
   return { db, user };
 }

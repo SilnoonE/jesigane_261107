@@ -1,5 +1,23 @@
-export type CreateField = "title" | "location" | "startsAt" | "amount";
+export type CreateField =
+  "title" | "location" | "startsAt" | "amount" | "nickname";
 export type CreateErrors = Partial<Record<CreateField, string>>;
+export const MAX_DEPOSIT = 50000;
+export function validateNickname(value: unknown) {
+  const nickname =
+    typeof value === "string"
+      ? value.trim().normalize("NFC").replace(/\s+/g, " ")
+      : "";
+  const error = !nickname
+    ? "이 약속에서 쓸 닉네임을 입력해 주세요."
+    : Array.from(nickname).length > 20
+      ? "닉네임은 20자 이내로 입력해 주세요."
+      : /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f]/.test(
+            nickname,
+          )
+        ? "닉네임에 사용할 수 없는 문자가 있어요."
+        : "";
+  return { nickname, error };
+}
 
 // datetime-local has no time zone. Interpret the displayed wall clock as KST,
 // regardless of the browser or server's own time zone. Accept optional seconds.
@@ -25,6 +43,8 @@ export function nextMinuteInput(ms: number): string {
 }
 export function validateCreate(input: Record<string, unknown>, now: number) {
   const errors: CreateErrors = {};
+  const nick = validateNickname(input.nickname);
+  if (nick.error) errors.nickname = nick.error;
   const title = typeof input.title === "string" ? input.title.trim() : "";
   const location =
     typeof input.location === "string" ? input.location.trim() : "";
@@ -43,9 +63,12 @@ export function validateCreate(input: Record<string, unknown>, now: number) {
       "선택한 시간이 이미 지났어요. 현재 한국 시각보다 늦은 시간을 선택해 주세요.";
   if (
     typeof input.amount !== "number" ||
-    ![0, 1000, 3000].includes(input.amount)
+    !Number.isInteger(input.amount) ||
+    input.amount < 0 ||
+    input.amount > MAX_DEPOSIT
   )
-    errors.amount = "예약금 없음, 1,000원, 3,000원 중에서 선택해 주세요.";
+    errors.amount =
+      "1인 예약금은 0원부터 50,000원까지 원 단위로 입력해 주세요.";
   return {
     valid: Object.keys(errors).length === 0,
     errors,
@@ -53,5 +76,6 @@ export function validateCreate(input: Record<string, unknown>, now: number) {
     location,
     startsAt,
     amount: input.amount as number,
+    nickname: nick.nickname,
   };
 }

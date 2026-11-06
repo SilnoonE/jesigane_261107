@@ -2497,3 +2497,81 @@
   gap: 5px;
   padding: 13px 8px;
 }
+.seoul-app .s-custom-amount {
+  background: #f1f2e8;
+  border: 1px solid #dde4d2;
+  border-radius: 9px;
+  padding: 17px 15px;
+  margin-top: 15px;
+}
+.seoul-app .s-amount-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: #768b68;
+}
+.seoul-app .s-amount-heading strong {
+  font-size: 18px;
+  color: #36594b;
+  letter-spacing: -0.6px;
+}
+.seoul-app .s-custom-amount input[type="range"] {
+  appearance: auto;
+  accent-color: #315c50;
+  cursor: ew-resize;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 15px 0 3px;
+  height: 25px;
+  box-shadow: none;
+  width: 100%;
+}
+.seoul-app .s-range-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #94a184;
+}
+.seoul-app .s-amount-number {
+  margin-top: 17px;
+  font-size: 10px;
+}
+.seoul-app .s-won-input {
+  display: flex;
+  align-items: center;
+  border: 1px solid #d4dfc9;
+  background: #fffdf7;
+  border-radius: 6px;
+  margin-top: 8px;
+  padding-right: 13px;
+  gap: 10px;
+}
+.seoul-app .s-won-input input {
+  border: 0;
+  background: transparent;
+  padding: 12px;
+  margin: 0;
+  flex: 1;
+  width: 0;
+  font-size: 15px;
+  color: #486a52;
+}
+.seoul-app .s-won-input > span {
+  color: #8c9b7b;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+.seoul-app .s-nickname-edit {
+  background: none;
+  color: #a98762;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 9px;
+  padding: 0;
+  margin-top: 7px;
+  text-align: left;
+}

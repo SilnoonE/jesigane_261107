@@ -34,6 +34,8 @@ import {
   parseKSTInput,
   nextMinuteInput,
   validateCreate,
+  validateNickname,
+  MAX_DEPOSIT,
   type CreateErrors,
 } from "./lib/meetup-validation";
 type Room = {
@@ -47,6 +49,7 @@ type Room = {
   state: string;
   guest_count?: number;
   paid_count?: number;
+  my_nickname?: string | null;
 };
 type Person = {
   id: string;
@@ -54,6 +57,7 @@ type Person = {
   name: string;
   payment: string;
   checked_at: string | null;
+  nickname?: string | null;
 };
 type Claim = { id: string; target_id: string; reason: string; state: string };
 type Vote = { claim_id: string; voter_id: string; agree: number };
@@ -67,7 +71,7 @@ type Detail = {
 };
 type Data = {
   authenticated: boolean;
-  user?: { id: string; name: string };
+  user?: { id: string };
   rooms: Room[];
   detail: Detail | null;
   serverNow?: string;
@@ -167,9 +171,14 @@ export default function SeoulApp() {
     [navOpen, setNavOpen] = useState(false),
     [filter, setFilter] = useState("all");
   const [title, setTitle] = useState(""),
+    [nickname, setNickname] = useState(""),
+    [joinNickname, setJoinNickname] = useState(""),
+    [editNickname, setEditNickname] = useState(""),
+    [nicknameError, setNicknameError] = useState(""),
     [location, setLocation] = useState(""),
     [starts, setStarts] = useState(""),
     [amount, setAmount] = useState(0),
+    [amountText, setAmountText] = useState("0"),
     [code, setCode] = useState(""),
     [target, setTarget] = useState(""),
     [reason, setReason] = useState(""),
@@ -180,7 +189,13 @@ export default function SeoulApp() {
     [createAttempted, setCreateAttempted] = useState(false),
     [serverCreateErrors, setServerCreateErrors] = useState<CreateErrors>({});
   const createValidation = validateCreate(
-    { title, location, startsAt: parseKSTInput(starts) || "", amount },
+    {
+      title,
+      location,
+      nickname,
+      startsAt: parseKSTInput(starts) || "",
+      amount,
+    },
     clockNow,
   );
   const createErrors: CreateErrors = {
@@ -241,7 +256,7 @@ export default function SeoulApp() {
       if (e.key === "Tab" && el) {
         const all = Array.from(
           el.querySelectorAll<HTMLElement>(
-            "button:not(:disabled),input,textarea,a[href]",
+            "button:not(:disabled),input:not([type=range]),textarea,a[href]",
           ),
         );
         if (!all.length) return;
@@ -273,6 +288,16 @@ export default function SeoulApp() {
     balance = pooled - used;
   const rooms = data?.rooms || [],
     pending = detail?.claims.filter((c) => c.state === "pending") || [];
+  const profileName = demo
+    ? "체험 중"
+    : data?.authenticated
+      ? me?.nickname || "나의 공간"
+      : "반가워요, 친구!";
+  function chooseAmount(n: number) {
+    setAmount(n);
+    setAmountText(String(n));
+    setServerCreateErrors({});
+  }
   function navigate(v: string) {
     setView(v);
     setActiveId("");
@@ -363,6 +388,8 @@ export default function SeoulApp() {
         throw Error(result.error);
       }
       setToast(result.message);
+      if (body.action === "create") setNickname("");
+      if (body.action === "join") setJoinNickname("");
       setModal("");
       if (result.id) {
         setActiveId(result.id);
@@ -386,6 +413,7 @@ export default function SeoulApp() {
       if (!starts)
         setStarts(nextMinuteInput(Date.now() + clockOffset + 60 * 60000));
     }
+    if (action === "join") setNicknameError("");
     setModal(action);
   };
   async function copyInvite() {
@@ -459,11 +487,9 @@ export default function SeoulApp() {
             <span>37.5665° N, 126.9780° E</span>
           </div>
           <div className="s-user">
-            <span className="s-avatar">
-              {data?.user?.name?.slice(0, 1) || "O"}
-            </span>
+            <span className="s-avatar">{profileName.slice(0, 1)}</span>
             <div>
-              <strong>{data?.user?.name || "반가워요, 친구!"}</strong>
+              <strong>{profileName}</strong>
               <small>
                 {data?.authenticated
                   ? "서울의 약속 메이트"
@@ -748,7 +774,7 @@ export default function SeoulApp() {
                       친구의 기다림이니까.
                     </h3>
                     <p>
-                      1,000원 또는 3,000원.
+                      예약금 없이, 또는 최대 50,000원까지.
                       <br />
                       부담 없이 걸고, 기분 좋게 지켜요.
                     </p>
@@ -850,7 +876,7 @@ export default function SeoulApp() {
                   [
                     "01",
                     "서울 어딘가에서, 만나기로 해요.",
-                    "약속 이름·장소·시간을 정해요. 예약금 없이 일정만 만들거나 1,000원·3,000원을 선택할 수 있어요. 초대 코드를 친구에게 보내주세요.",
+                    "내 닉네임과 약속 이름·장소·시간을 정해요. 예약금 없이 만들거나 슬라이더와 숫자 입력으로 1인당 최대 50,000원까지 설정해요. 초대받은 친구도 닉네임을 직접 입력해요.",
                   ],
                   [
                     "02",
@@ -970,6 +996,20 @@ export default function SeoulApp() {
                               )}
                             </b>
                             <span>{payState[p.payment]}</span>
+                            {p.user_id === userId && !demo && (
+                              <button
+                                className="s-nickname-edit"
+                                onClick={() => {
+                                  setEditNickname(p.nickname || "");
+                                  setNicknameError("");
+                                  setModal("nickname");
+                                }}
+                              >
+                                {p.nickname
+                                  ? "내 닉네임 변경"
+                                  : "내 닉네임 설정"}
+                              </button>
+                            )}
                           </div>
                           <div className="s-arrival">
                             {p.checked_at ? (
@@ -1417,6 +1457,7 @@ export default function SeoulApp() {
                       : "남은 예약금을 돌려줘요",
                   cancel: "이 약속을 취소할까요?",
                   login: "로그인하고, 같이 만나요.",
+                  nickname: "이 약속의 내 닉네임",
                 }[modal]
               }
             </h2>
@@ -1430,6 +1471,7 @@ export default function SeoulApp() {
                   const checked = validateCreate(
                     {
                       title,
+                      nickname,
                       location,
                       startsAt: parseKSTInput(starts) || "",
                       amount,
@@ -1444,12 +1486,46 @@ export default function SeoulApp() {
                   act({
                     action: "create",
                     title,
+                    nickname,
                     location,
                     startsAt: checked.startsAt,
                     amount,
                   });
                 }}
               >
+                <label>
+                  이 약속에서 쓸 내 닉네임
+                  <input
+                    id="create-nickname"
+                    required
+                    autoComplete="off"
+                    maxLength={40}
+                    placeholder="예: 한강러버 (최대 20자)"
+                    value={nickname}
+                    onChange={(e) => {
+                      setNickname(e.target.value);
+                      setServerCreateErrors({});
+                    }}
+                    aria-invalid={!!createErrors.nickname}
+                    aria-describedby={
+                      createErrors.nickname
+                        ? "create-nickname-error"
+                        : undefined
+                    }
+                  />
+                  <span className="s-field-hint">
+                    계정 이름 대신 이 약속의 참여자·투표 목록에 표시돼요.
+                  </span>
+                  {createErrors.nickname && (
+                    <span
+                      className="s-field-error"
+                      id="create-nickname-error"
+                      role="alert"
+                    >
+                      {createErrors.nickname}
+                    </span>
+                  )}
+                </label>
                 <label>
                   약속 이름
                   <input
@@ -1548,8 +1624,7 @@ export default function SeoulApp() {
                       className={amount === n ? "s-selected" : ""}
                       key={n}
                       onClick={() => {
-                        setAmount(n);
-                        setServerCreateErrors({});
+                        chooseAmount(n);
                       }}
                       aria-pressed={amount === n}
                     >
@@ -1557,6 +1632,75 @@ export default function SeoulApp() {
                       {amount === n && <Check size={16} />}
                     </button>
                   ))}
+                </div>
+                <div className="s-custom-amount">
+                  <div className="s-amount-heading">
+                    <span>1인당 직접 정하기</span>
+                    <strong>
+                      {Number.isFinite(amount)
+                        ? money(amount)
+                        : "금액을 입력해 주세요"}
+                    </strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={MAX_DEPOSIT}
+                    step={1}
+                    value={
+                      Number.isFinite(amount)
+                        ? Math.min(MAX_DEPOSIT, Math.max(0, amount))
+                        : 0
+                    }
+                    aria-label="1인 예약금 슬라이더"
+                    aria-valuetext={
+                      Number.isFinite(amount) ? money(amount) : "금액 미입력"
+                    }
+                    onChange={(e) => chooseAmount(Number(e.target.value))}
+                  />
+                  <div className="s-range-labels">
+                    <span>없음 · 0원</span>
+                    <span>최대 50,000원</span>
+                  </div>
+                  <label className="s-amount-number">
+                    정확한 금액 입력{" "}
+                    <span className="s-won-input">
+                      <input
+                        id="create-amount"
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={MAX_DEPOSIT}
+                        step={1}
+                        value={amountText}
+                        onChange={(e) => {
+                          setAmountText(e.target.value);
+                          setAmount(
+                            e.target.value === ""
+                              ? NaN
+                              : Number(e.target.value),
+                          );
+                          setServerCreateErrors({});
+                        }}
+                        aria-invalid={!!createErrors.amount}
+                        aria-describedby={
+                          createErrors.amount
+                            ? "create-amount-error"
+                            : undefined
+                        }
+                      />
+                      <span>원 / 인</span>
+                    </span>
+                  </label>
+                  {createErrors.amount && (
+                    <span
+                      className="s-field-error"
+                      id="create-amount-error"
+                      role="alert"
+                    >
+                      {createErrors.amount}
+                    </span>
+                  )}
                 </div>
                 <p className="s-modal-note">
                   {amount === 0
@@ -1577,12 +1721,37 @@ export default function SeoulApp() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  act({ action: "join", code });
+                  const nick = validateNickname(joinNickname);
+                  if (nick.error) {
+                    setNicknameError(nick.error);
+                    return;
+                  }
+                  act({ action: "join", code, nickname: nick.nickname });
                 }}
               >
                 <p className="s-modal-intro">
                   친구가 보내준 초대 코드를 입력하세요.
                 </p>
+                <label>
+                  이 약속에서 쓸 내 닉네임
+                  <input
+                    required
+                    autoComplete="off"
+                    maxLength={40}
+                    placeholder="친구들에게 보일 닉네임 (최대 20자)"
+                    value={joinNickname}
+                    onChange={(e) => {
+                      setJoinNickname(e.target.value);
+                      setNicknameError("");
+                    }}
+                    aria-invalid={!!nicknameError}
+                  />
+                  {nicknameError && (
+                    <span className="s-field-error" role="alert">
+                      {nicknameError}
+                    </span>
+                  )}
+                </label>
                 <label>
                   초대 코드
                   <input
@@ -1600,6 +1769,52 @@ export default function SeoulApp() {
                 <button className="s-primary s-full" disabled={busy}>
                   약속에 참여하기
                   <ArrowRight size={16} />
+                </button>
+              </form>
+            )}
+            {modal === "nickname" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const nick = validateNickname(editNickname);
+                  if (nick.error) {
+                    setNicknameError(nick.error);
+                    return;
+                  }
+                  act({ action: "nickname", nickname: nick.nickname });
+                }}
+              >
+                <p className="s-modal-intro">
+                  이 약속에서만 사용하는 닉네임이에요. 계정 이름과 다른 약속의
+                  닉네임은 바뀌지 않아요.
+                </p>
+                <label>
+                  내 닉네임
+                  <input
+                    autoComplete="off"
+                    required
+                    maxLength={40}
+                    value={editNickname}
+                    placeholder="친구들에게 보일 닉네임"
+                    onChange={(e) => {
+                      setEditNickname(e.target.value);
+                      setNicknameError("");
+                    }}
+                    aria-invalid={!!nicknameError}
+                  />
+                </label>
+                {nicknameError && (
+                  <p className="s-field-error" role="alert">
+                    {nicknameError}
+                  </p>
+                )}
+                <button
+                  className="s-primary s-full"
+                  disabled={busy}
+                  type="submit"
+                >
+                  닉네임 저장
+                  <Check size={16} />
                 </button>
               </form>
             )}

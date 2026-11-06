@@ -1,6 +1,6 @@
 import { session } from "../../lib/session";
 import { simulatedReceipt } from "../../lib/payments";
-import { validateCreate } from "../../lib/meetup-validation";
+import { validateCreate, validateNickname } from "../../lib/meetup-validation";
 export const dynamic = "force-dynamic";
 const json = (x: unknown, s = 200) =>
   Response.json(x, { status: s, headers: { "Cache-Control": "no-store" } });
@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const { db, user } = c;
     const rooms = await db
       .prepare(
-        `SELECT m.*,(SELECT COUNT(*) FROM guests g WHERE g.meetup_id=m.id) AS guest_count,(SELECT COUNT(*) FROM guests g WHERE g.meetup_id=m.id AND g.payment='paid') AS paid_count FROM meetups m JOIN guests g ON g.meetup_id=m.id AND g.user_id=? ORDER BY m.created_at DESC,m.id`,
+        `SELECT m.*,g.nickname AS my_nickname,(SELECT COUNT(*) FROM guests g WHERE g.meetup_id=m.id) AS guest_count,(SELECT COUNT(*) FROM guests g WHERE g.meetup_id=m.id AND g.payment='paid') AS paid_count FROM meetups m JOIN guests g ON g.meetup_id=m.id AND g.user_id=? ORDER BY m.created_at DESC,m.id`,
       )
       .bind(user.userId)
       .all();
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
       const [people, cs, vs, ex] = await db.batch([
         db
           .prepare(
-            "SELECT g.*,u.name FROM guests g JOIN members u ON u.id=g.user_id WHERE g.meetup_id=? ORDER BY g.id",
+            "SELECT g.*,COALESCE(g.nickname,'닉네임 미설정') AS name FROM guests g WHERE g.meetup_id=? ORDER BY g.id",
           )
           .bind(id),
         db
@@ -66,7 +66,7 @@ export async function GET(req: Request) {
     }
     return json({
       authenticated: true,
-      user: { id: user.userId, name: user.displayName },
+      user: { id: user.userId },
       rooms: rooms.results,
       detail,
       paymentMode: "simulation",
@@ -120,18 +120,25 @@ export async function POST(req: Request) {
           ),
         db
           .prepare(
-            "INSERT INTO guests(id,meetup_id,user_id,payment) VALUES(?,?,?,?)",
+            "INSERT INTO guests(id,meetup_id,user_id,payment,nickname) VALUES(?,?,?,?,?)",
           )
           .bind(
             uid(),
             id,
             user.userId,
             checked.amount === 0 ? "waived" : "unpaid",
+            checked.nickname,
           ),
       ]);
       return json({ message: "새로운 서울 약속이 생겼어요!", id });
     }
     if (b.action === "join") {
+      const nick = validateNickname(b.nickname);
+      if (nick.error)
+        return json(
+          { error: nick.error, fieldErrors: { nickname: nick.error } },
+          400,
+        );
       if (typeof b.code !== "string")
         return fail("초대 코드를 입력해 주세요.", 400);
       const room = await db
@@ -143,17 +150,38 @@ export async function POST(req: Request) {
         .prepare("SELECT id FROM guests WHERE meetup_id=? AND user_id=?")
         .bind(room.id, user.userId)
         .first();
-      if (existing)
-        return json({ message: "이미 참여한 약속이에요.", id: room.id });
+      if (existing) {
+        const changed = await db
+          .prepare(
+            "UPDATE guests SET nickname=? WHERE meetup_id=? AND user_id=? AND NOT EXISTS(SELECT 1 FROM guests other WHERE other.meetup_id=guests.meetup_id AND other.user_id!=guests.user_id AND other.nickname=?) RETURNING id",
+          )
+          .bind(nick.nickname, room.id, user.userId, nick.nickname)
+          .all();
+        return changed.results.length
+          ? json({
+              message: "이미 참여한 약속이에요. 닉네임을 반영했어요.",
+              id: room.id,
+            })
+          : fail(
+              "이 약속에서 이미 사용 중인 닉네임이에요. 다른 닉네임을 골라 주세요.",
+            );
+      }
       const r = await db
         .prepare(
-          `INSERT INTO guests(id,meetup_id,user_id,payment) SELECT ?,id,?,CASE WHEN amount=0 THEN 'waived' ELSE 'unpaid' END FROM meetups WHERE id=? AND state='open' AND starts_at>? AND (SELECT COUNT(*) FROM guests WHERE meetup_id=meetups.id)<20 RETURNING id`,
+          `INSERT INTO guests(id,meetup_id,user_id,payment,nickname) SELECT ?,id,?,CASE WHEN amount=0 THEN 'waived' ELSE 'unpaid' END,? FROM meetups WHERE id=? AND state='open' AND starts_at>? AND (SELECT COUNT(*) FROM guests WHERE meetup_id=meetups.id)<20 AND NOT EXISTS(SELECT 1 FROM guests other WHERE other.meetup_id=meetups.id AND other.nickname=?) ON CONFLICT DO NOTHING RETURNING id`,
         )
-        .bind(uid(), user.userId, room.id, new Date().toISOString())
+        .bind(
+          uid(),
+          user.userId,
+          nick.nickname,
+          room.id,
+          new Date().toISOString(),
+          nick.nickname,
+        )
         .all();
       return r.results.length
         ? json({ message: "약속에 합류했어요.", id: room.id })
-        : fail("확정·마감된 약속이거나 정원 20명이 찼어요.");
+        : fail("확정·마감된 약속, 정원 초과 또는 이미 사용 중인 닉네임이에요.");
     }
     if (typeof b.id !== "string") return fail("약속을 선택해 주세요.", 400);
     const room = await db
@@ -165,6 +193,19 @@ export async function POST(req: Request) {
     if (!room) return fail("약속 참여자만 사용할 수 있어요.", 403);
     const isHost = room.owner_id === user.userId,
       now = new Date().toISOString();
+    if (b.action === "nickname") {
+      const nick = validateNickname(b.nickname);
+      if (nick.error) return fail(nick.error, 400);
+      const changed = await db
+        .prepare(
+          "UPDATE guests SET nickname=? WHERE meetup_id=? AND user_id=? AND NOT EXISTS(SELECT 1 FROM guests other WHERE other.meetup_id=guests.meetup_id AND other.user_id!=guests.user_id AND other.nickname=?) RETURNING id",
+        )
+        .bind(nick.nickname, room.id, user.userId, nick.nickname)
+        .all();
+      return changed.results.length
+        ? json({ message: "이 약속의 내 닉네임을 바꿨어요." })
+        : fail("이미 사용 중인 닉네임이에요. 다른 닉네임을 골라 주세요.");
+    }
     if (b.action === "pay") {
       if (room.amount === 0)
         return fail("예약금 없는 약속은 결제가 필요하지 않아요.");
