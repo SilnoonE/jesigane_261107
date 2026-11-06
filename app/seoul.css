@@ -2457,3 +2457,5 @@
   border-radius: 5px;
   padding: 10px 9px;
 }
+.seoul-app .s-brand{font-size:26px;white-space:nowrap;gap:7px;letter-spacing:-1.5px}
+@media(min-width:651px) and (max-width:950px){.seoul-app .s-brand{font-size:23px}.seoul-app .s-logo{width:31px;height:31px}}

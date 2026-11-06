@@ -164,11 +164,11 @@ export default function BookingApp() {
   return (
     <div className="shell">
       <aside className={"sidebar " + (mobile ? "mobile-open" : "")}>
-        <a className="brand" href="/" aria-label="온타임 홈">
+        <a className="brand" href="/" aria-label="제시간에 홈">
           <span className="brand-mark">
             <Clock3 size={23} />
           </span>
-          온타임<span className="brand-dot">.</span>
+          제시간에<span className="brand-dot">.</span>
         </a>
         <div className="workspace-label">MY TIME, MY PACE</div>
         <nav aria-label="주 메뉴">
@@ -281,7 +281,7 @@ export default function BookingApp() {
             </div>
           ) : !data?.authenticated ? (
             <div className="login-card">
-              <span className="eyebrow">WELCOME TO ONTIME</span>
+              <span className="eyebrow">WELCOME TO JESIGANE</span>
               <h1>
                 나를 위한 시간,
                 <br />
@@ -310,7 +310,7 @@ export default function BookingApp() {
                         <br />
                         좋은 시간에서 시작해요.
                       </h1>
-                      <p>편한 시간을 골라주세요. 나머지는 온타임이 챙길게요.</p>
+                      <p>편한 시간을 골라주세요. 나머지는 제시간에이 챙길게요.</p>
                       <div className="hero-tags">
                         <span>
                           <Clock3 size={14} />
@@ -928,9 +928,9 @@ export default function BookingApp() {
             </>
           )}
           <footer>
-            <span className="footer-brand">온타임.</span>
+            <span className="footer-brand">제시간에.</span>
             <span>당신의 시간을 소중하게.</span>
-            <span>© {new Date().getFullYear()} ONTIME</span>
+            <span>© {new Date().getFullYear()} JESIGANE</span>
           </footer>
         </main>
       </div>

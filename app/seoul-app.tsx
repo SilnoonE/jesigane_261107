@@ -361,7 +361,7 @@ export default function SeoulApp() {
           <span className="s-logo">
             <Clock3 size={23} />
           </span>
-          온타임<span className="s-dot">●</span>
+          제시간에<span className="s-dot">●</span>
         </a>
         <p className="s-brand-caption">SEOUL, RIGHT ON TIME.</p>
         <div className="s-nav-label">OUR LITTLE PROMISE</div>
@@ -389,7 +389,7 @@ export default function SeoulApp() {
             onClick={() => navigate("guide")}
           >
             <Compass size={19} />
-            온타임 사용법
+            제시간에 사용법
           </button>
         </nav>
         <div className="s-nav-label s-extra">MORE MOMENTS</div>
@@ -464,7 +464,7 @@ export default function SeoulApp() {
                   ? "우리 약속"
                   : view === "wallet"
                     ? "모임비 기록"
-                    : "온타임 사용법"}
+                    : "제시간에 사용법"}
               </b>
             </span>
           </div>
@@ -1270,7 +1270,7 @@ export default function SeoulApp() {
           )}
           <footer className="s-footer">
             <span>
-              <b>온타임.</b> 서울에서, 우리 제시간에.
+              <b>제시간에.</b> 서울에서, 우리 제시간에.
             </span>
             <span>
               MADE FOR OUR MOMENTS <span>✳</span> SEOUL
