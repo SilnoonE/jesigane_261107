@@ -8,6 +8,7 @@ const run = Date.now().toString(36),
   owner = "local_seedy";
 async function api(user, body, origin = base) {
   const res = await fetch(base + "/api/booking", {
+    signal: AbortSignal.timeout(30000),
     method: body ? "POST" : "GET",
     headers: {
       Connection: "close",
@@ -29,6 +30,8 @@ async function api(user, body, origin = base) {
   return { status: res.status, body: JSON.parse(raw) };
 }
 
+// Load the authenticated route before exercising early-rejected POSTs on Miniflare.
+assert.equal((await api(owner)).body.user.admin, true);
 assert.equal(
   (
     await api(
@@ -39,7 +42,6 @@ assert.equal(
   ).status,
   403,
 );
-assert.equal((await api(owner)).body.user.admin, true);
 const users = Array.from({ length: 20 }, (_, i) => `test_${run}_${i}`);
 await Promise.all(users.map((u) => api(u)));
 assert.equal(
@@ -52,6 +54,8 @@ const date = "2099-12-10",
   slotId = `${date}_${time}`;
 const created = await api(owner, { action: "create", date, time });
 assert.ok([200, 409].includes(created.status));
+const existingSlot = (await api(owner)).body.slots.find((s) => s.id === slotId);
+if (!existingSlot.open) await api(owner, { action: "toggle", slotId });
 const applied = await Promise.all(
   users.map((u) => api(u, { action: "join", slotId })),
 );

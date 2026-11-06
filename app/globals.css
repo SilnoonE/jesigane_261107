@@ -1686,3 +1686,61 @@ td small {
     transition: none !important;
   }
 }
+/* Seoul palette for the retained consultation service. */
+.shell {
+  --bg: #f7f5ed;
+  --purple: #234f60;
+  --soft: #e6ede6;
+  --line: #e2e6dd;
+  background: var(--bg);
+  color: #234f60;
+}
+.shell .sidebar,
+.shell .topbar {
+  background: #faf9f3;
+}
+.shell .hero {
+  background:
+    linear-gradient(90deg, #fcf2dfee, #faefd7a6 47%, #faefd722),
+    url("/images/seoul-sunset.webp") center/cover;
+  border-color: #e2dccc;
+  min-height: 290px;
+}
+.shell .hero-art {
+  visibility: hidden;
+}
+.shell .hero h1 {
+  color: #234f60;
+}
+.shell .hero p,
+.shell .hero-tags {
+  color: #6d786c;
+}
+.shell .eyebrow {
+  color: #a47955;
+}
+.shell .mini-tip {
+  background: #e9eee5;
+  border-color: #dfe6d9;
+}
+.shell .tip-icon {
+  color: #a4b58d;
+}
+.shell .summary-card {
+  background: #fffdf7;
+}
+.shell .session-icon {
+  background: #e6ede2;
+  color: #7e9777;
+}
+.shell .time.selected {
+  background: #e8eee4;
+  border-color: #74907d;
+  box-shadow: 0 0 0 1px #74907d;
+}
+.shell .time small {
+  color: #8c9c7f;
+}
+.shell .brand-dot {
+  color: #db684a;
+}

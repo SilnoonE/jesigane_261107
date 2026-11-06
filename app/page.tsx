@@ -1,4 +1,4 @@
-import BookingApp from "./booking-app";
+import SeoulApp from "./seoul-app";
 export default function Home() {
-  return <BookingApp />;
+  return <SeoulApp />;
 }
