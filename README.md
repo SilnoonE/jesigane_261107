@@ -1,6 +1,6 @@
 # 제시간에 — 서울에서, 우리 제시간에
 
-**2026-11-07 · v0.2.0 개발 스냅샷**
+**2026-11-07 · v0.2.1 개발 스냅샷**
 
 [기획 과정](docs/2026-11-07-planning-process.md) · [현재 버전 구성](docs/2026-11-07-version.md) · [구조와 설계 결정](docs/architecture.md) · [변경 기록](CHANGELOG.md)
 
@@ -11,10 +11,10 @@
 
 ## 지금 가능한 일
 
-- 약속 이름, 장소, 날짜·시간(KST), 1인 1,000원 또는 3,000원으로 약속방 생성
+- 약속 이름, 장소, 날짜·시간(KST), 예약금 없음(0원) 또는 1인 1,000원·3,000원으로 약속방 생성
 - 12자리 초대 코드로 최대 20명 참여
 - 카카오페이 또는 토스를 선택해 모의 예치 기록 저장
-- 2명 이상, 전원 예치 후 모임장이 약속 확정
+- 2명 이상이면 예약금 없는 약속은 결제 없이 확정, 예약금이 있다면 전원 예치 후 확정
 - 확정 후 본인 체크인: 서버 시간 저장, 위치 인증 없음
 - 시작 후 지각·미체크인 친구의 예약금 사용 투표 제안
 - 당사자를 제외한 모든 참여자의 명시적인 동의가 있어야 가상 모임비 전환
@@ -63,7 +63,7 @@ meetups
 확정 후 참여자 추가가 금지되므로 투표의 분모가 고정됩니다.
 
 약속 상태: open → locked → settled, 또는 시작 전 canceled. 미확정 open은 만료 후에도 canceled 가능.
-예치 상태: unpaid → paid → refunded 또는 forfeited.
+예치 상태: unpaid → paid → refunded 또는 forfeited. 예약금 없는 약속은 waived(면제)이며 결제·지각비 투표를 사용하지 않습니다.
 투표 상태: pending → approved 또는 rejected. 완료된 투표와 이미 던진 표는 변경할 수 없습니다.
 
 ## 만장일치를 SQL로 보장하기
@@ -89,7 +89,7 @@ vote 요청은 D1의 atomic batch 안에서 다음 순서로 처리합니다.
 
 | action | 요청 | 권한·조건 |
 | --- | --- | --- |
-| create | title, location, startsAt, amount | 로그인, 미래 시간, 1,000/3,000원 |
+| create | title, location, startsAt, amount | 로그인, 미래 시간, 0/1,000/3,000원 |
 | join | code | 미확정·시작 전, 최대 20명 |
 | pay | id, provider: kakao/toss | 본인, 모의 예치 1회 |
 | lock | id | 모임장, 시작 전, 전원 예치·2명 이상 |
@@ -130,6 +130,8 @@ DB는 로컬과 배포가 서로 다릅니다. 테스트 데이터는 배포 DB�
 node node_modules/typescript/bin/tsc --noEmit
 npm run build
 ```
+
+날짜 입력 회귀 테스트는 서버 없이 `node --experimental-strip-types scripts/test-meetup-validation.mjs`로 실행합니다.
 
 통합 테스트는 dev 서버를 종료하고, 배포 빌드 서버 한 개로 진행합니다. 두 서버가 같은 로컬 DB를 동시에 쓰면 Windows에서 잠금 대기가 길어질 수 있습니다.
 

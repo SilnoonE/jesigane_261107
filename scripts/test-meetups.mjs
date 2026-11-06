@@ -222,7 +222,65 @@ await ok(users[0], { action: "cancel", id: cancel.id });
 const canceled = await detail(cancel.id);
 assert.equal(canceled.room.state, "canceled");
 assert.equal(canceled.people[0].payment, "refunded");
+// Deposit-free plans must never require or manufacture a payment.
+const free = await ok(users[0], {
+  action: "create",
+  title: "예약금 없는 한강 약속",
+  location: "여의도",
+  startsAt: new Date(Date.now() + 3600000).toISOString(),
+  amount: 0,
+});
+let freeDetail = await detail(free.id);
+assert.equal(freeDetail.people[0].payment, "waived");
+await ok(users[1], { action: "join", code: freeDetail.room.code });
+freeDetail = await detail(free.id);
+assert.ok(freeDetail.people.every((p) => p.payment === "waived"));
+assert.equal(
+  (await api(users[0], { action: "pay", id: free.id, provider: "toss" }))
+    .status,
+  409,
+);
+await ok(users[0], { action: "lock", id: free.id });
+await ok(users[1], { action: "checkin", id: free.id });
+fixture(`UPDATE meetups SET starts_at='${past}' WHERE id='${free.id}';`);
+assert.equal(
+  (
+    await api(users[0], {
+      action: "claim",
+      id: free.id,
+      targetId: users[1],
+      reason: "0원 지각비 불가",
+    })
+  ).status,
+  409,
+);
+assert.equal(
+  (
+    await api(users[0], {
+      action: "spend",
+      id: free.id,
+      amount: 1,
+      memo: "0원 지출 불가",
+    })
+  ).status,
+  409,
+);
+await ok(users[0], { action: "settle", id: free.id });
+freeDetail = await detail(free.id);
+assert.equal(freeDetail.room.state, "settled");
+assert.equal(freeDetail.expenses.length, 0);
+assert.ok(freeDetail.people.every((p) => p.payment === "waived"));
+const invalidTime = await api(users[0], {
+  action: "create",
+  title: "지난 시간",
+  location: "한강",
+  startsAt: past,
+  amount: 0,
+});
+assert.equal(invalidTime.status, 400);
+assert.match(invalidTime.body.fieldErrors.startsAt, /이미 지났어요/);
+assert.ok(invalidTime.body.serverNow);
 assert.equal((await api(null, { action: "create" })).status, 401);
 console.log(
-  "PASS: membership privacy, 1000/3000 amounts, atomic mock payment, frozen roster, check-in, no self vote, explicit unanimous consent, pending holds, rejection refund, immutable votes, concurrent overspend protection, settlement, cancellation, auth.",
+  "PASS: field-specific time errors, deposit-free plan create/join/lock/checkin/settle, 1000/3000 mock payments, membership privacy, frozen roster, unanimous consent, rejection refunds, immutable votes, concurrent overspend protection, cancellation and auth.",
 );

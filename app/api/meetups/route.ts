@@ -1,5 +1,6 @@
 import { session } from "../../lib/session";
 import { simulatedReceipt } from "../../lib/payments";
+import { validateCreate } from "../../lib/meetup-validation";
 export const dynamic = "force-dynamic";
 const json = (x: unknown, s = 200) =>
   Response.json(x, { status: s, headers: { "Cache-Control": "no-store" } });
@@ -91,19 +92,16 @@ export async function POST(req: Request) {
     }
     if (!b || typeof b !== "object") return fail("잘못된 요청입니다.", 400);
     if (b.action === "create") {
-      if (
-        typeof b.title !== "string" ||
-        !b.title.trim() ||
-        b.title.length > 60 ||
-        typeof b.location !== "string" ||
-        !b.location.trim() ||
-        b.location.length > 100 ||
-        typeof b.startsAt !== "string" ||
-        !Number.isFinite(Date.parse(b.startsAt)) ||
-        Date.parse(b.startsAt) <= Date.now() ||
-        ![1000, 3000].includes(Number(b.amount))
-      )
-        return fail("약속 이름·장소·미래 시간과 예약금을 확인해 주세요.", 400);
+      const checked = validateCreate(b, Date.now());
+      if (!checked.valid)
+        return json(
+          {
+            error: Object.values(checked.errors)[0],
+            fieldErrors: checked.errors,
+            serverNow: new Date().toISOString(),
+          },
+          400,
+        );
       const id = uid(),
         code = uid().replaceAll("-", "").slice(0, 12).toUpperCase();
       await db.batch([
@@ -114,15 +112,22 @@ export async function POST(req: Request) {
           .bind(
             id,
             user.userId,
-            b.title.trim(),
-            b.location.trim(),
-            new Date(b.startsAt).toISOString(),
-            Number(b.amount),
+            checked.title,
+            checked.location,
+            new Date(checked.startsAt).toISOString(),
+            checked.amount,
             code,
           ),
         db
-          .prepare("INSERT INTO guests(id,meetup_id,user_id) VALUES(?,?,?)")
-          .bind(uid(), id, user.userId),
+          .prepare(
+            "INSERT INTO guests(id,meetup_id,user_id,payment) VALUES(?,?,?,?)",
+          )
+          .bind(
+            uid(),
+            id,
+            user.userId,
+            checked.amount === 0 ? "waived" : "unpaid",
+          ),
       ]);
       return json({ message: "새로운 서울 약속이 생겼어요!", id });
     }
@@ -142,7 +147,7 @@ export async function POST(req: Request) {
         return json({ message: "이미 참여한 약속이에요.", id: room.id });
       const r = await db
         .prepare(
-          `INSERT INTO guests(id,meetup_id,user_id) SELECT ?,id,? FROM meetups WHERE id=? AND state='open' AND starts_at>? AND (SELECT COUNT(*) FROM guests WHERE meetup_id=meetups.id)<20 RETURNING id`,
+          `INSERT INTO guests(id,meetup_id,user_id,payment) SELECT ?,id,?,CASE WHEN amount=0 THEN 'waived' ELSE 'unpaid' END FROM meetups WHERE id=? AND state='open' AND starts_at>? AND (SELECT COUNT(*) FROM guests WHERE meetup_id=meetups.id)<20 RETURNING id`,
         )
         .bind(uid(), user.userId, room.id, new Date().toISOString())
         .all();
@@ -161,6 +166,8 @@ export async function POST(req: Request) {
     const isHost = room.owner_id === user.userId,
       now = new Date().toISOString();
     if (b.action === "pay") {
+      if (room.amount === 0)
+        return fail("예약금 없는 약속은 결제가 필요하지 않아요.");
       if (
         typeof b.provider !== "string" ||
         !["kakao", "toss"].includes(b.provider)
@@ -183,13 +190,20 @@ export async function POST(req: Request) {
       if (!isHost) return fail("모임장만 약속을 확정할 수 있어요.", 403);
       const r = await db
         .prepare(
-          `UPDATE meetups SET state='locked' WHERE id=? AND state='open' AND starts_at>? AND (SELECT COUNT(*) FROM guests WHERE meetup_id=meetups.id)>=2 AND NOT EXISTS(SELECT 1 FROM guests WHERE meetup_id=meetups.id AND payment!='paid') RETURNING id`,
+          `UPDATE meetups SET state='locked' WHERE id=? AND state='open' AND starts_at>? AND (SELECT COUNT(*) FROM guests WHERE meetup_id=meetups.id)>=2 AND NOT EXISTS(SELECT 1 FROM guests WHERE meetup_id=meetups.id AND payment NOT IN ('paid','waived')) RETURNING id`,
         )
         .bind(room.id, now)
         .all();
       return r.results.length
-        ? json({ message: "약속 확정! 참여자 명단과 예약금이 고정됐어요." })
-        : fail("시작 전에 2명 이상 참여하고 모두 예치해야 확정할 수 있어요.");
+        ? json({
+            message:
+              room.amount === 0
+                ? "결제 없이 약속을 확정했어요. 이 멤버로 만나요!"
+                : "약속 확정! 참여자 명단과 예약금이 고정됐어요.",
+          })
+        : fail(
+            "시작 전에 2명 이상 참여해야 해요. 예약금이 있는 약속은 전원 예치 후 확정할 수 있어요.",
+          );
     }
     if (b.action === "checkin") {
       const r = await db
@@ -206,6 +220,8 @@ export async function POST(req: Request) {
         : fail("확정된 약속에서 한 번만 체크인할 수 있어요.");
     }
     if (b.action === "claim") {
+      if (room.amount === 0)
+        return fail("예약금 없는 약속은 지각비 투표를 사용하지 않아요.");
       if (
         typeof b.targetId !== "string" ||
         b.targetId === user.userId ||
@@ -292,7 +308,9 @@ export async function POST(req: Request) {
       return results[0].results.length
         ? json({
             message:
-              "정산 완료! 모임비로 전환되지 않은 예약금은 모의 환불됐어요.",
+              room.amount === 0
+                ? "약속을 마무리했어요. 다음에 또 만나요!"
+                : "정산 완료! 모임비로 전환되지 않은 예약금은 모의 환불됐어요.",
           })
         : fail("약속 시작 후, 모든 투표가 끝나야 정산할 수 있어요.");
     }

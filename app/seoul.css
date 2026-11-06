@@ -2457,5 +2457,43 @@
   border-radius: 5px;
   padding: 10px 9px;
 }
-.seoul-app .s-brand{font-size:26px;white-space:nowrap;gap:7px;letter-spacing:-1.5px}
-@media(min-width:651px) and (max-width:950px){.seoul-app .s-brand{font-size:23px}.seoul-app .s-logo{width:31px;height:31px}}
+.seoul-app .s-brand {
+  font-size: 26px;
+  white-space: nowrap;
+  gap: 7px;
+  letter-spacing: -1.5px;
+}
+@media (min-width: 651px) and (max-width: 950px) {
+  .seoul-app .s-brand {
+    font-size: 23px;
+  }
+  .seoul-app .s-logo {
+    width: 31px;
+    height: 31px;
+  }
+}
+.seoul-app .s-field-error {
+  display: block;
+  color: #b65338;
+  font-size: 11px;
+  line-height: 1.8;
+  margin-top: 7px;
+  font-weight: 500;
+}
+.seoul-app .s-field-hint {
+  display: block;
+  color: #819277;
+  font-size: 10px;
+  line-height: 1.8;
+  margin-top: 8px;
+  font-weight: 400;
+}
+.seoul-app .s-modal input[aria-invalid="true"] {
+  border-color: #ca8466;
+  background: #fff8f0;
+}
+.seoul-app .s-amount-select > button {
+  font-size: 12px;
+  gap: 5px;
+  padding: 13px 8px;
+}

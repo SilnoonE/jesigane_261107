@@ -30,6 +30,12 @@ import {
   Coins,
 } from "lucide-react";
 import "./seoul.css";
+import {
+  parseKSTInput,
+  nextMinuteInput,
+  validateCreate,
+  type CreateErrors,
+} from "./lib/meetup-validation";
 type Room = {
   id: string;
   owner_id: string;
@@ -64,8 +70,10 @@ type Data = {
   user?: { id: string; name: string };
   rooms: Room[];
   detail: Detail | null;
+  serverNow?: string;
 };
 const money = (n: number) => n.toLocaleString("ko-KR") + "원";
+const depositLabel = (n: number) => (n === 0 ? "예약금 없음" : money(n));
 const when = (s: string) =>
   new Date(s).toLocaleString("ko-KR", {
     month: "long",
@@ -83,6 +91,7 @@ const roomState: Record<string, string> = {
   canceled: "취소된 약속",
 };
 const payState: Record<string, string> = {
+  waived: "예약금 없음",
   unpaid: "예치 전",
   paid: "모의 예치 완료",
   refunded: "모의 환불 완료",
@@ -160,12 +169,24 @@ export default function SeoulApp() {
   const [title, setTitle] = useState(""),
     [location, setLocation] = useState(""),
     [starts, setStarts] = useState(""),
-    [amount, setAmount] = useState(3000),
+    [amount, setAmount] = useState(0),
     [code, setCode] = useState(""),
     [target, setTarget] = useState(""),
     [reason, setReason] = useState(""),
     [spend, setSpend] = useState(""),
     [memo, setMemo] = useState("");
+  const [clockOffset, setClockOffset] = useState(0),
+    [clockNow, setClockNow] = useState(() => Date.now()),
+    [createAttempted, setCreateAttempted] = useState(false),
+    [serverCreateErrors, setServerCreateErrors] = useState<CreateErrors>({});
+  const createValidation = validateCreate(
+    { title, location, startsAt: parseKSTInput(starts) || "", amount },
+    clockNow,
+  );
+  const createErrors: CreateErrors = {
+    ...(createAttempted ? createValidation.errors : {}),
+    ...serverCreateErrors,
+  };
   const seqRef = useRef(0),
     dialog = useRef<HTMLDivElement>(null);
   async function load(id = activeId, initial = false) {
@@ -181,6 +202,10 @@ export default function SeoulApp() {
       if (seq === seqRef.current) {
         setData(d);
         setError("");
+        if (d.serverNow && Number.isFinite(Date.parse(d.serverNow))) {
+          setClockOffset(Date.parse(d.serverNow) - Date.now());
+          setClockNow(Date.parse(d.serverNow));
+        }
       }
     } catch (e) {
       if (seq === seqRef.current)
@@ -194,6 +219,13 @@ export default function SeoulApp() {
     const i = setInterval(() => load(activeId), 15000);
     return () => clearInterval(i);
   }, [activeId]);
+  useEffect(() => {
+    const timer = setInterval(
+      () => setClockNow(Date.now() + clockOffset),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [clockOffset]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 6000);
@@ -316,8 +348,20 @@ export default function SeoulApp() {
         message: string;
         error?: string;
         id?: string;
+        fieldErrors?: CreateErrors;
+        serverNow?: string;
       };
-      if (!res.ok) throw Error(result.error);
+      if (!res.ok) {
+        if (body.action === "create" && result.fieldErrors) {
+          setCreateAttempted(true);
+          setServerCreateErrors(result.fieldErrors);
+          if (result.serverNow) {
+            setClockOffset(Date.parse(result.serverNow) - Date.now());
+            setClockNow(Date.parse(result.serverNow));
+          }
+        }
+        throw Error(result.error);
+      }
       setToast(result.message);
       setModal("");
       if (result.id) {
@@ -335,6 +379,12 @@ export default function SeoulApp() {
     if (!data?.authenticated) {
       setModal("login");
       return;
+    }
+    if (action === "create") {
+      setCreateAttempted(false);
+      setServerCreateErrors({});
+      if (!starts)
+        setStarts(nextMinuteInput(Date.now() + clockOffset + 60 * 60000));
     }
     setModal(action);
   };
@@ -543,7 +593,7 @@ export default function SeoulApp() {
                   <b>01</b>친구끼리 시간 정하고
                 </span>
                 <span>
-                  <b>02</b>작은 예약금 걸고
+                  <b>02</b>원하면 예약금 걸고
                 </span>
                 <span>
                   <b>03</b>늦으면, 함께 결정해요
@@ -641,8 +691,8 @@ export default function SeoulApp() {
                                 {room.guest_count}명의 친구
                               </span>
                               <strong>
-                                {money(room.amount)}
-                                <small> / 인</small>
+                                {depositLabel(room.amount)}
+                                <small>{room.amount > 0 ? " / 인" : ""}</small>
                               </strong>
                             </div>
                           </button>
@@ -763,8 +813,10 @@ export default function SeoulApp() {
                       </small>
                     </span>
                     <strong>
-                      {money(room.amount)}
-                      <small>1인 예약금</small>
+                      {depositLabel(room.amount)}
+                      <small>
+                        {room.amount > 0 ? "1인 예약금" : "일정만 함께 정해요"}
+                      </small>
                     </strong>
                     <ArrowUpRight size={20} />
                   </button>
@@ -798,12 +850,12 @@ export default function SeoulApp() {
                   [
                     "01",
                     "서울 어딘가에서, 만나기로 해요.",
-                    "약속 이름·장소·시간을 정하고 1,000원 또는 3,000원을 선택해요. 초대 코드를 친구에게 보내주세요.",
+                    "약속 이름·장소·시간을 정해요. 예약금 없이 일정만 만들거나 1,000원·3,000원을 선택할 수 있어요. 초대 코드를 친구에게 보내주세요.",
                   ],
                   [
                     "02",
                     "다 모이면, 약속을 확정해요.",
-                    "2명 이상이 참여하고 모두 모의 예치를 마치면 모임장이 확정해요. 이후에는 참여자와 금액이 바뀌지 않아요.",
+                    "예약금 없는 약속은 2명 이상 참여하면 바로 확정해요. 예약금이 있다면 모두 모의 예치를 마쳐야 해요. 확정 후에는 참여자와 금액이 바뀌지 않아요.",
                   ],
                   [
                     "03",
@@ -896,7 +948,9 @@ export default function SeoulApp() {
                         함께하는 친구들 <span>{detail.people.length}</span>
                       </h2>
                       <span className="s-small-label">
-                        예약금 {money(r.amount)} / 인
+                        {r.amount > 0
+                          ? `예약금 ${money(r.amount)} / 인`
+                          : "예약금 없이 함께하는 약속"}
                       </span>
                     </div>
                     <div className="s-people">
@@ -976,14 +1030,16 @@ export default function SeoulApp() {
                       </button>
                     )}
                     <p className="s-footnote">
-                      직접 체크인하는 방식이에요. 위치 인증 없이 시간을
-                      기록하고, 지각비 사용은 친구들의 투표로 결정해요.
+                      {r.amount === 0
+                        ? "직접 체크인하면 도착 시간이 기록돼요. 위치 인증은 사용하지 않아요."
+                        : "직접 체크인하는 방식이에요. 위치 인증 없이 시간을 기록하고, 지각비 사용은 친구들의 투표로 결정해요."}
                     </p>
                   </section>
                   <section className="s-panel">
                     <div className="s-panel-head">
                       <h2>
-                        우리끼리 투표 <span>{detail.claims.length}</span>
+                        {r.amount > 0 ? "우리끼리 투표" : "약속 안내"}{" "}
+                        {r.amount > 0 && <span>{detail.claims.length}</span>}
                       </h2>
                       <ThumbsUp size={19} />
                     </div>
@@ -1113,63 +1169,80 @@ export default function SeoulApp() {
                     {!detail.claims.length && (
                       <div className="s-small-empty">
                         <ThumbsUp size={28} />
-                        <h3>함께 결정할 일이 생기면 여기에.</h3>
+                        <h3>
+                          {r.amount > 0
+                            ? "함께 결정할 일이 생기면 여기에."
+                            : "예약금 없는 약속이에요."}
+                        </h3>
                         <p>
-                          시작 후 지각·미체크인 친구 옆에서 투표를 제안할 수
-                          있어요.
+                          {r.amount > 0
+                            ? "시작 후 지각·미체크인 친구 옆에서 투표를 제안할 수 있어요."
+                            : "일정과 도착만 함께 확인해요. 지각비 투표와 모임비는 사용하지 않아요."}
                         </p>
                       </div>
                     )}
-                    <div className="s-vote-rule">
-                      <ShieldCheck size={16} />
-                      미응답은 동의가 아니에요. 한 명의 반대도 존중해요.
-                    </div>
+                    {r.amount > 0 && (
+                      <div className="s-vote-rule">
+                        <ShieldCheck size={16} />
+                        미응답은 동의가 아니에요. 한 명의 반대도 존중해요.
+                      </div>
+                    )}
                   </section>
                 </div>
                 <aside className="s-detail-right">
-                  <section className="s-wallet-card">
-                    <span className="s-eyebrow">OUR SHARED POCKET</span>
-                    <h2>함께 쓸 모임비</h2>
-                    <div className="s-wallet-amount">
-                      {balance.toLocaleString("ko-KR")}
-                      <small>원</small>
-                    </div>
-                    <span className="s-wallet-mode">모의 잔액 · 출금 불가</span>
-                    <div className="s-wallet-lines">
-                      <p>
-                        <span>전원 동의로 모인 금액</span>
-                        <b>{money(pooled)}</b>
+                  {r.amount > 0 && (
+                    <section className="s-wallet-card">
+                      <span className="s-eyebrow">OUR SHARED POCKET</span>
+                      <h2>함께 쓸 모임비</h2>
+                      <div className="s-wallet-amount">
+                        {balance.toLocaleString("ko-KR")}
+                        <small>원</small>
+                      </div>
+                      <span className="s-wallet-mode">
+                        모의 잔액 · 출금 불가
+                      </span>
+                      <div className="s-wallet-lines">
+                        <p>
+                          <span>전원 동의로 모인 금액</span>
+                          <b>{money(pooled)}</b>
+                        </p>
+                        <p>
+                          <span>기록한 사용 금액</span>
+                          <b>{money(used)}</b>
+                        </p>
+                      </div>
+                      <button
+                        className="s-cream-button"
+                        disabled={!host || balance <= 0 || busy}
+                        onClick={() => {
+                          setSpend("");
+                          setMemo("");
+                          setModal("spend");
+                        }}
+                      >
+                        <ReceiptText size={16} />
+                        모임비 사용 기록하기
+                      </button>
+                      <p className="s-wallet-disclaimer">
+                        실제 결제·송금은 발생하지 않아요.
+                        <br />
+                        동의받은 금액의 가상 사용 장부예요.
                       </p>
-                      <p>
-                        <span>기록한 사용 금액</span>
-                        <b>{money(used)}</b>
-                      </p>
-                    </div>
-                    <button
-                      className="s-cream-button"
-                      disabled={!host || balance <= 0 || busy}
-                      onClick={() => {
-                        setSpend("");
-                        setMemo("");
-                        setModal("spend");
-                      }}
-                    >
-                      <ReceiptText size={16} />
-                      모임비 사용 기록하기
-                    </button>
-                    <p className="s-wallet-disclaimer">
-                      실제 결제·송금은 발생하지 않아요.
-                      <br />
-                      동의받은 금액의 가상 사용 장부예요.
-                    </p>
-                  </section>
+                    </section>
+                  )}
                   <section className="s-panel s-my-deposit">
                     <div className="s-panel-head">
                       <h3>내 작은 약속</h3>
                       <Coins size={20} />
                     </div>
-                    <strong>{money(r.amount)}</strong>
-                    <span>{me ? payState[me.payment] : ""}</span>
+                    <strong>{depositLabel(r.amount)}</strong>
+                    <span>
+                      {r.amount === 0
+                        ? "일정만 정하는 약속"
+                        : me
+                          ? payState[me.payment]
+                          : ""}
+                    </span>
                     {me?.payment === "unpaid" && r.state === "open" && (
                       <button
                         className="s-primary s-full"
@@ -1180,9 +1253,15 @@ export default function SeoulApp() {
                       </button>
                     )}
                     <p>
-                      정산 때 남은 예약금을 돌려받아요.
-                      <br />
-                      지각비 사용은 나머지 전원 동의가 필요해요.
+                      {r.amount > 0 ? (
+                        <>
+                          정산 때 남은 예약금을 돌려받아요.
+                          <br />
+                          지각비 사용은 나머지 전원 동의가 필요해요.
+                        </>
+                      ) : (
+                        "예약금과 결제 없이 만날 시간을 정해요. 친구가 참여하면 약속을 확정할 수 있어요."
+                      )}
                     </p>
                   </section>
                   {host && (
@@ -1194,7 +1273,9 @@ export default function SeoulApp() {
                           disabled={
                             busy ||
                             detail.people.length < 2 ||
-                            detail.people.some((p) => p.payment !== "paid") ||
+                            detail.people.some(
+                              (p) => !["paid", "waived"].includes(p.payment),
+                            ) ||
                             Date.parse(r.starts_at) <= Date.now()
                           }
                           onClick={() => setModal("lock")}
@@ -1212,7 +1293,9 @@ export default function SeoulApp() {
                           }
                           onClick={() => setModal("settle")}
                         >
-                          남은 예약금 모의 환불·정산
+                          {r.amount > 0
+                            ? "남은 예약금 모의 환불·정산"
+                            : "약속 마무리하기"}
                         </button>
                       )}
                       {(r.state === "open" ||
@@ -1223,49 +1306,57 @@ export default function SeoulApp() {
                           disabled={busy}
                           onClick={() => setModal("cancel")}
                         >
-                          약속 취소 · 전액 모의 환불
+                          {r.amount > 0
+                            ? "약속 취소 · 전액 모의 환불"
+                            : "약속 취소하기"}
                         </button>
                       )}
                       <p>
                         {r.state === "open"
-                          ? "2명 이상, 전원 예치 후 시작 전에 확정해요."
+                          ? r.amount > 0
+                            ? "2명 이상, 전원 예치 후 시작 전에 확정해요."
+                            : "2명 이상 참여하면 결제 없이 시작 전에 확정해요."
                           : r.state === "locked"
-                            ? "모든 투표가 끝나면 남은 예약금을 정산해요."
+                            ? r.amount > 0
+                              ? "모든 투표가 끝나면 남은 예약금을 정산해요."
+                              : "만남을 마쳤다면 약속을 마무리해 주세요."
                             : "약속의 정산이 마무리됐어요."}
                       </p>
                     </section>
                   )}
                 </aside>
               </div>
-              <section className="s-panel s-expenses">
-                <div className="s-panel-head">
-                  <h2>같이 보는 사용 기록</h2>
-                  <span className="s-small-label">VIRTUAL LEDGER</span>
-                </div>
-                {detail.expenses.length ? (
-                  detail.expenses.map((e) => (
-                    <div className="s-expense" key={e.id}>
-                      <ReceiptText size={18} />
-                      <span>
-                        <b>{e.memo}</b>
-                        <small>
-                          {when(
-                            e.created_at.includes("T")
-                              ? e.created_at
-                              : e.created_at.replace(" ", "T") + "Z",
-                          )}
-                        </small>
-                      </span>
-                      <strong>− {money(e.amount)}</strong>
-                    </div>
-                  ))
-                ) : (
-                  <p className="s-footnote">
-                    아직 사용 기록이 없어요. 전원 동의로 모인 모임비만 잔액
-                    안에서 기록할 수 있어요.
-                  </p>
-                )}
-              </section>
+              {r.amount > 0 && (
+                <section className="s-panel s-expenses">
+                  <div className="s-panel-head">
+                    <h2>같이 보는 사용 기록</h2>
+                    <span className="s-small-label">VIRTUAL LEDGER</span>
+                  </div>
+                  {detail.expenses.length ? (
+                    detail.expenses.map((e) => (
+                      <div className="s-expense" key={e.id}>
+                        <ReceiptText size={18} />
+                        <span>
+                          <b>{e.memo}</b>
+                          <small>
+                            {when(
+                              e.created_at.includes("T")
+                                ? e.created_at
+                                : e.created_at.replace(" ", "T") + "Z",
+                            )}
+                          </small>
+                        </span>
+                        <strong>− {money(e.amount)}</strong>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="s-footnote">
+                      아직 사용 기록이 없어요. 전원 동의로 모인 모임비만 잔액
+                      안에서 기록할 수 있어요.
+                    </p>
+                  )}
+                </section>
+              )}
             </>
           )}
           <footer className="s-footer">
@@ -1320,7 +1411,10 @@ export default function SeoulApp() {
                   claim: "친구들의 의견을 물어봐요",
                   spend: "무엇을 함께 샀나요?",
                   lock: "이 멤버로 약속할까요?",
-                  settle: "남은 예약금을 돌려줘요",
+                  settle:
+                    r?.amount === 0
+                      ? "약속을 마무리할까요?"
+                      : "남은 예약금을 돌려줘요",
                   cancel: "이 약속을 취소할까요?",
                   login: "로그인하고, 같이 만나요.",
                 }[modal]
@@ -1328,18 +1422,30 @@ export default function SeoulApp() {
             </h2>
             {modal === "create" && (
               <form
+                noValidate
                 onSubmit={(e) => {
                   e.preventDefault();
-                  const dt = new Date(starts + ":00+09:00");
-                  if (!Number.isFinite(dt.getTime())) {
-                    setToast("올바른 날짜를 입력해 주세요.");
+                  setCreateAttempted(true);
+                  setServerCreateErrors({});
+                  const checked = validateCreate(
+                    {
+                      title,
+                      location,
+                      startsAt: parseKSTInput(starts) || "",
+                      amount,
+                    },
+                    Date.now() + clockOffset,
+                  );
+                  if (!checked.valid) {
+                    const first = Object.keys(checked.errors)[0];
+                    document.getElementById(`create-${first}`)?.focus();
                     return;
                   }
                   act({
                     action: "create",
                     title,
                     location,
-                    startsAt: dt.toISOString(),
+                    startsAt: checked.startsAt,
                     amount,
                   });
                 }}
@@ -1347,49 +1453,115 @@ export default function SeoulApp() {
                 <label>
                   약속 이름
                   <input
+                    id="create-title"
                     required
                     maxLength={60}
                     placeholder="예: 한강에서 노을 한 스푼"
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                      setServerCreateErrors({});
+                    }}
+                    aria-invalid={!!createErrors.title}
+                    aria-describedby={
+                      createErrors.title ? "create-title-error" : undefined
+                    }
                   />
+                  {createErrors.title && (
+                    <span
+                      className="s-field-error"
+                      id="create-title-error"
+                      role="alert"
+                    >
+                      {createErrors.title}
+                    </span>
+                  )}
                 </label>
                 <label>
                   어디서 만나요?
                   <input
+                    id="create-location"
                     required
                     maxLength={100}
                     placeholder="예: 여의도 한강공원 물빛광장"
                     value={location}
-                    onChange={(e) => setLocation(e.target.value)}
+                    onChange={(e) => {
+                      setLocation(e.target.value);
+                      setServerCreateErrors({});
+                    }}
+                    aria-invalid={!!createErrors.location}
+                    aria-describedby={
+                      createErrors.location
+                        ? "create-location-error"
+                        : undefined
+                    }
                   />
+                  {createErrors.location && (
+                    <span
+                      className="s-field-error"
+                      id="create-location-error"
+                      role="alert"
+                    >
+                      {createErrors.location}
+                    </span>
+                  )}
                 </label>
                 <label>
                   언제 만나요? <small>한국 시간 KST</small>
                   <input
+                    id="create-startsAt"
                     required
                     type="datetime-local"
+                    min={nextMinuteInput(clockNow)}
+                    step={60}
                     value={starts}
-                    onChange={(e) => setStarts(e.target.value)}
+                    onChange={(e) => {
+                      setStarts(e.target.value);
+                      setServerCreateErrors({});
+                    }}
+                    aria-invalid={!!createErrors.startsAt}
+                    aria-describedby={
+                      "create-time-hint" +
+                      (createErrors.startsAt ? " create-time-error" : "")
+                    }
                   />
+                  <span className="s-field-hint" id="create-time-hint">
+                    현재 한국 시각: {when(new Date(clockNow).toISOString())}
+                    <br />
+                    현재 시각보다 늦은 시간을 선택해 주세요.
+                  </span>
+                  {createErrors.startsAt && (
+                    <span
+                      className="s-field-error"
+                      id="create-time-error"
+                      role="alert"
+                    >
+                      {createErrors.startsAt}
+                    </span>
+                  )}
                 </label>
                 <label>1인 예약금</label>
                 <div className="s-amount-select">
-                  {[1000, 3000].map((n) => (
+                  {[0, 1000, 3000].map((n) => (
                     <button
                       type="button"
                       className={amount === n ? "s-selected" : ""}
                       key={n}
-                      onClick={() => setAmount(n)}
+                      onClick={() => {
+                        setAmount(n);
+                        setServerCreateErrors({});
+                      }}
+                      aria-pressed={amount === n}
                     >
-                      {money(n)}
+                      {n === 0 ? "없음 (0원)" : money(n)}
                       {amount === n && <Check size={16} />}
                     </button>
                   ))}
                 </div>
                 <p className="s-modal-note">
-                  현재는 가상 금액이에요. 지각비는 당사자를 제외한 전원 동의
-                  시에만 모임비로 전환해요.
+                  {amount === 0
+                    ? "예약금 없이 일정만 정해요. 친구가 참여하면 결제 없이 약속을 확정할 수 있어요."
+                    : "현재는 가상 금액이에요. 지각비는 당사자를 제외한 전원 동의 시에만 모임비로 전환해요."}
                 </p>
                 <button
                   className="s-primary s-full"
@@ -1561,10 +1733,16 @@ export default function SeoulApp() {
               <>
                 <p className="s-modal-intro">
                   {modal === "lock"
-                    ? "지금 참여한 친구들과 예약금이 고정돼요. 이후에는 새 친구가 들어올 수 없어요."
+                    ? r?.amount === 0
+                      ? "지금 참여한 친구들로 약속을 확정해요. 결제는 필요하지 않으며 확정 후에는 새 친구가 들어올 수 없어요."
+                      : "지금 참여한 친구들과 예약금이 고정돼요. 이후에는 새 친구가 들어올 수 없어요."
                     : modal === "settle"
-                      ? "모임비로 전환되지 않은 예약금을 각 참여자에게 모의 환불하고 약속을 마무리해요. 이후 새 투표와 체크인은 할 수 없어요."
-                      : "약속을 취소하고 예치된 예약금을 모두 모의 환불해요. 취소한 약속은 다시 열 수 없어요."}
+                      ? r?.amount === 0
+                        ? "만남을 마치고 약속을 완료 상태로 바꿔요. 이후에는 체크인할 수 없어요."
+                        : "모임비로 전환되지 않은 예약금을 각 참여자에게 모의 환불하고 약속을 마무리해요. 이후 새 투표와 체크인은 할 수 없어요."
+                      : r?.amount === 0
+                        ? "약속을 취소해요. 취소한 약속은 다시 열 수 없어요."
+                        : "약속을 취소하고 예치된 예약금을 모두 모의 환불해요. 취소한 약속은 다시 열 수 없어요."}
                 </p>
                 <button
                   className="s-primary s-full"
@@ -1576,7 +1754,9 @@ export default function SeoulApp() {
                     : modal === "lock"
                       ? "이대로 약속 확정"
                       : modal === "settle"
-                        ? "모의 환불하고 정산"
+                        ? r?.amount === 0
+                          ? "약속 마무리하기"
+                          : "모의 환불하고 정산"
                         : "약속 취소하기"}
                 </button>
               </>
